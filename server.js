@@ -18,6 +18,19 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'AYAZay Search API is running' });
 });
 
+// Performance monitoring endpoint
+app.get('/api/stats', (req, res) => {
+  const cacheManager = require('./services/cacheManager');
+  const { getAgentStats } = require('./services/httpClient');
+  
+  res.status(200).json({
+    cache: cacheManager.getStats(),
+    connections: getAgentStats(),
+    uptime: process.uptime(),
+    memoryUsage: process.memoryUsage()
+  });
+});
+
 // API routes
 app.use('/api', searchRoutes);
 

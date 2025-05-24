@@ -35,7 +35,8 @@ Keep the response friendly, simple, and under 20 sentences.
 Always say "product", not "product stock".
 Always refer to the platform as "AYAZay".
 Avoid showing technical IDs like product_stock_id.
-Do not show "* **" in the response.`
+Do not show "* **" in the response.
+`
       },
       modelSpec: {
         modelVersion: 'gemini-2.0-flash-001/answer_gen/v1'

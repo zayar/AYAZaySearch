@@ -1,5 +1,7 @@
 const { GoogleAuth } = require('google-auth-library');
 const config = require('../config/config');
+const cacheManager = require('./cacheManager');
+const { fetchWithKeepAlive } = require('./httpClient');
 
 class VertexAISearchService {
   constructor() {
@@ -69,8 +71,20 @@ class VertexAISearchService {
   }
 
   async getAuthToken() {
+    // Check cache first
+    const cachedToken = cacheManager.get('auth_token');
+    if (cachedToken) {
+      console.log('Using cached auth token');
+      return cachedToken;
+    }
+
+    console.log('Fetching new auth token');
     const client = await this.auth.getClient();
     const accessToken = await client.getAccessToken();
+    
+    // Cache the token for 55 minutes (tokens typically expire in 60 minutes)
+    cacheManager.set('auth_token', accessToken.token, 3300);
+    
     return accessToken.token;
   }
 
@@ -88,6 +102,16 @@ class VertexAISearchService {
 
   async search(query, options = {}) {
     try {
+      // Generate cache key for this specific search
+      const cacheKey = `search_${JSON.stringify({ query, options })}`;
+      
+      // Check cache first
+      const cachedResult = cacheManager.get(cacheKey);
+      if (cachedResult) {
+        console.log('Returning cached search results for:', query);
+        return cachedResult;
+      }
+
       const token = await this.getAuthToken();
       const searchPath = this.buildSearchPath();
       
@@ -107,7 +131,7 @@ class VertexAISearchService {
         ...(options.boostSpecs && { boostSpecs: options.boostSpecs })
       };
 
-      const response = await fetch(searchPath, {
+      const response = await fetchWithKeepAlive(searchPath, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -122,7 +146,12 @@ class VertexAISearchService {
       }
 
       const data = await response.json();
-      return this.formatSearchResponse(data, query);
+      const formattedResponse = this.formatSearchResponse(data, query);
+      
+      // Cache the formatted response for 5 minutes
+      cacheManager.set(cacheKey, formattedResponse, 300);
+      
+      return formattedResponse;
     } catch (error) {
       console.error('Search error:', error);
       // If Vertex AI search fails, return mock data for demonstration
@@ -169,6 +198,16 @@ class VertexAISearchService {
 
   async generateAnswer(query, queryId = '', sessionId = '-', options = {}, searchResults = null) {
     try {
+      // Generate cache key for this specific answer request
+      const cacheKey = `answer_${JSON.stringify({ query, queryId, options })}`;
+      
+      // Check cache first
+      const cachedAnswer = cacheManager.get(cacheKey);
+      if (cachedAnswer) {
+        console.log('Returning cached answer for:', query);
+        return cachedAnswer;
+      }
+
       const token = await this.getAuthToken();
       const answerPath = this.buildAnswerPath();
       
@@ -183,7 +222,7 @@ class VertexAISearchService {
         ...options
       };
 
-      const response = await fetch(answerPath, {
+      const response = await fetchWithKeepAlive(answerPath, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -198,7 +237,12 @@ class VertexAISearchService {
       }
 
       const data = await response.json();
-      return this.formatAnswerResponse(data, searchResults);
+      const formattedAnswer = this.formatAnswerResponse(data, searchResults);
+      
+      // Cache the formatted answer for 5 minutes
+      cacheManager.set(cacheKey, formattedAnswer, 300);
+      
+      return formattedAnswer;
     } catch (error) {
       console.error('Answer generation error:', error);
       // Return mock answer for demonstration
@@ -225,7 +269,7 @@ class VertexAISearchService {
         }
         
         if (product.availability) {
-          answerText += ` This product is available in ${product.availability.replace('Size: ', 'size ')}.`;
+          answerText += ` This product is available in ${product.availability}.`;
         }
         
         // Add modal trigger button with product data
@@ -320,10 +364,10 @@ class VertexAISearchService {
                    'AYAZay';
                    
       const category = structData.product_category || 
-                      'Product';
+                      '';
                       
       const availability = structData.product_stock_name ? 
-                          `Size: ${structData.product_stock_name}` :
+                          structData.product_stock_name :
                           'Available';
       
       return {

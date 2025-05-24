@@ -65,21 +65,49 @@ class SearchController {
         ...(orderBy && { orderBy })
       };
 
-      const searchResults = await vertexAISearchService.search(query, searchOptions);
+      // Start both operations in parallel
+      const searchPromise = vertexAISearchService.search(query, searchOptions);
       
-      // Then generate answer using the search results
-      const answer = await vertexAISearchService.generateAnswer(
+      // For initial answer generation, we'll use empty search results
+      // The answer will be refined once search results are available
+      const answerPromise = vertexAISearchService.generateAnswer(
         query,
-        searchResults.queryId,
+        '', // queryId will be empty initially
         '-',
         {},
-        searchResults.results
+        null // no search results yet
       );
+
+      // Wait for both operations to complete
+      const [searchResults, initialAnswer] = await Promise.all([
+        searchPromise,
+        answerPromise
+      ]);
+      
+      // If we have search results with a queryId, generate a refined answer
+      let finalAnswer = initialAnswer;
+      if (searchResults.queryId && searchResults.results && searchResults.results.length > 0) {
+        // Only generate refined answer if initial answer doesn't already have good results
+        if (!initialAnswer.answerText || initialAnswer.answerText.length < 100) {
+          try {
+            finalAnswer = await vertexAISearchService.generateAnswer(
+              query,
+              searchResults.queryId,
+              '-',
+              {},
+              searchResults.results
+            );
+          } catch (error) {
+            console.error('Refined answer generation failed, using initial answer:', error);
+            // Keep the initial answer if refined generation fails
+          }
+        }
+      }
 
       // Combine both results
       const combinedResults = {
         ...searchResults,
-        answer: answer
+        answer: finalAnswer
       };
 
       res.json(combinedResults);

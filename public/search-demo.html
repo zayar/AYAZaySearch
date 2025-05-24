@@ -806,13 +806,13 @@
             <div class="answer-text" id="answerText"></div>
         </div>
 
+        <div class="search-results" id="searchResults">
+            <div class="loading">Start typing to search...</div>
+        </div>
+
         <div class="suggestions" id="suggestionsSection" style="display: none;">
             <div class="suggestions-title">Suggestions</div>
             <div class="suggestion-pills" id="suggestionPills"></div>
-        </div>
-
-        <div class="search-results" id="searchResults">
-            <div class="loading">Start typing to search...</div>
         </div>
     </div>
 
@@ -830,39 +830,60 @@
         let searchTimeout;
         let autocompleteTimeout;
 
-        searchInput.addEventListener('input', (e) => {
-            const query = e.target.value.trim();
-            clearBtn.style.display = query ? 'block' : 'none';
-            
-            // Handle autocomplete (but don't show errors if it fails)
-            clearTimeout(autocompleteTimeout);
-            if (query.length > 2) {
-                autocompleteTimeout = setTimeout(() => {
-                    fetchAutocomplete(query);
-                }, 300);
+        // Debounce function
+        function debounce(func, delay) {
+            let timeoutId;
+            return function(...args) {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => func.apply(this, args), delay);
+            };
+        }
+
+        // Debounced versions of search functions
+        const debouncedAutocomplete = debounce(async (value) => {
+            if (value.length > 2) {
+                await fetchAutocomplete(value);
             } else {
                 autocompleteDropdown.style.display = 'none';
             }
+        }, 300); // 300ms delay for autocomplete
+
+        const debouncedSearch = debounce(async (query) => {
+            await performSearch(query);
+        }, 500); // 500ms delay for full search
+
+        // Update search input event listener
+        searchInput.addEventListener('input', (e) => {
+            const value = e.target.value.trim();
             
-            // Clear results when input is empty
-            if (!query) {
+            // Show/hide clear button
+            clearBtn.style.display = value ? 'block' : 'none';
+            
+            // Call debounced autocomplete
+            if (value) {
+                debouncedAutocomplete(value);
+            } else {
+                autocompleteDropdown.style.display = 'none';
                 searchResults.innerHTML = '<div class="loading">Start typing to search...</div>';
                 answerSection.style.display = 'none';
                 suggestionsSection.style.display = 'none';
             }
         });
 
-        // Add Enter key search functionality
+        // Add Enter key handler
         searchInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
-                const query = e.target.value.trim();
+                e.preventDefault();
+                const query = searchInput.value.trim();
                 if (query) {
+                    // Cancel any pending debounced calls
                     performSearch(query);
                 }
                 autocompleteDropdown.style.display = 'none';
             }
         });
 
+        // Clear button handler
         clearBtn.addEventListener('click', () => {
             searchInput.value = '';
             clearBtn.style.display = 'none';
